@@ -51,7 +51,8 @@ void setupArgs(testArgs_t *args, const testEngine_t *engine) {
 }
 
 static void startColl(threadArgs_t *targs, int in_place) {
-  const void *send = in_place ? targs->recvbuff : targs->sendbuff;
+  (void)in_place;
+  const void *send = targs->sendbuff;
   void *recv = targs->recvbuff;
   // In-place uses recv buffer as input; out-of-place uses send buffer.
   targs->engine->runTest(targs, targs->test->root, targs->test->type,
@@ -98,8 +99,25 @@ static void initThreadResources(threadArgs_t *targs) {
   MUSACHECK(musaEventCreate(&targs->start));
   MUSACHECK(musaEventCreate(&targs->stop));
 
-  MUSACHECK(musaMalloc(&targs->sendbuff, targs->sendBytes));
   MUSACHECK(musaMalloc(&targs->recvbuff, targs->recvBytes));
+  targs->send_is_alias = 0;
+  targs->in_place_offset = 0;
+  if (targs->in_place) {
+    if (targs->engine->getInplaceOffset) {
+      targs->in_place_offset =
+          targs->engine->getInplaceOffset(targs->sendBytes, targs->recvBytes,
+                                          targs->nranks, targs->rank);
+    }
+    if (targs->in_place_offset + targs->sendBytes > targs->recvBytes) {
+      printf("Rank %d: invalid in-place offset %zu for recvBytes %zu\n",
+             targs->rank, targs->in_place_offset, targs->recvBytes);
+      exit(EXIT_FAILURE);
+    }
+    targs->sendbuff = (char *)targs->recvbuff + targs->in_place_offset;
+    targs->send_is_alias = 1;
+  } else {
+    MUSACHECK(musaMalloc(&targs->sendbuff, targs->sendBytes));
+  }
 
   MCCLCHECK(mcclCommInitRank(&targs->comms[targs->rank], targs->nranks,
                              targs->commId, targs->rank));
@@ -110,7 +128,9 @@ static void destroyThreadResources(threadArgs_t *targs) {
   if (targs->comm) {
     MCCLCHECK(mcclCommDestroy(targs->comm));
   }
-  MUSACHECK(musaFree(targs->sendbuff));
+  if (!targs->send_is_alias) {
+    MUSACHECK(musaFree(targs->sendbuff));
+  }
   MUSACHECK(musaFree(targs->recvbuff));
   MUSACHECK(musaEventDestroy(targs->start));
   MUSACHECK(musaEventDestroy(targs->stop));
@@ -159,6 +179,8 @@ static void run_mode(const testEngine_t *engine, testArgs_t *test, int in_place,
     targs[r].recvBytes = test->recvBytes;
     targs[r].count = test->count;
     targs[r].in_place = in_place;
+    targs[r].in_place_offset = 0;
+    targs[r].send_is_alias = 0;
     targs[r].commId = commId;
     targs[r].comms = comms;
     targs[r].comm = NULL;
@@ -187,10 +209,10 @@ static void run_mode(const testEngine_t *engine, testArgs_t *test, int in_place,
   free(targs);
 }
 
-static void print_header(const testEngine_t *engine) {
+static void print_header(const testEngine_t *engine, int want_ip) {
   printf("# mccl-test %s\n", engine->name);
   // Keep output columns consistent with nccl-tests-style summaries.
-  if (engine->supportsInplace) {
+  if (want_ip) {
     printf("%12s %12s %8s %8s %6s %12s %12s %12s %12s %12s %12s %8s\n",
            "size(B)", "count", "type", "op", "root", "oop_time(ms)",
            "oop_algBW", "oop_busBW", "ip_time(ms)", "ip_algBW", "ip_busBW",
@@ -227,27 +249,40 @@ int main(int argc, char **argv) {
   test.iters = get_env_int("ITERS", 20);
   test.check = get_env_int("DATACHECK", 1);
   test.sizeBytes = get_env_size_t("SIZE_BYTES", engine->defaultSizeBytes);
+  int inplace_mode =
+      get_env_int("INPLACE", engine->supportsInplace ? 2 : 0);
 
   setupArgs(&test, engine);
-
-  print_header(engine);
 
   double oop_ms = 0.0, oop_algbw = 0.0, oop_busbw = 0.0;
   double ip_ms = 0.0, ip_algbw = 0.0, ip_busbw = 0.0;
   int oop_errors = 0, ip_errors = 0;
 
-  run_mode(engine, &test, 0, &oop_ms, &oop_algbw, &oop_busbw, &oop_errors);
+  const int want_oop = (inplace_mode != 1);
+  const int want_ip = (inplace_mode != 0) && engine->supportsInplace;
 
-  if (engine->supportsInplace) {
+  print_header(engine, want_ip);
+//this part need to Refactoring
+  if (want_oop) {
+    run_mode(engine, &test, 0, &oop_ms, &oop_algbw, &oop_busbw, &oop_errors);
+  }
+  if (want_ip) {
     run_mode(engine, &test, 1, &ip_ms, &ip_algbw, &ip_busbw, &ip_errors);
+  }
+
+  if (want_oop && want_ip) {
     printf("%12zu %12zu %8s %8s %6d %12.3f %12.2f %12.2f %12.3f %12.2f %12.2f %8d\n",
            test.sizeBytes, test.count, test.typeName, test.opName, test.root,
            oop_ms, oop_algbw, oop_busbw, ip_ms, ip_algbw, ip_busbw,
            oop_errors + ip_errors);
-  } else {
+  } else if (want_oop) {
     printf("%12zu %12zu %8s %8s %6d %12.3f %12.2f %12.2f %8d\n",
            test.sizeBytes, test.count, test.typeName, test.opName, test.root,
            oop_ms, oop_algbw, oop_busbw, oop_errors);
+  } else {
+    printf("%12zu %12zu %8s %8s %6d %12s %12s %12s %12.3f %12.2f %12.2f %8d\n",
+           test.sizeBytes, test.count, test.typeName, test.opName, test.root,
+           "-", "-", "-", ip_ms, ip_algbw, ip_busbw, ip_errors);
   }
 
   return 0;

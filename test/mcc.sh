@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
-read -r -p "请输入要编译的.mu文件名 (例如: allreduce.mu 或 allgather.mu): " source_file
+read -r -p "请输入要编译的.mu文件名 (例如: allreduce.mu/allgather.mu/broadcast.mu/reduce.mu/gather.mu): " source_file
 if [[ -z "${source_file}" ]]; then
   echo "未提供文件名，已退出。"
   exit 1

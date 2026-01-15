@@ -14,8 +14,8 @@ static void allgather_initData(threadArgs_t *args, int root, DataType type,
   (void)op;
   (void)in_place;
   // Initialize send with rank value; recv zeroed for clarity.
-  MUSACHECK(musaMemset(args->sendbuff, 0, args->sendBytes));
   MUSACHECK(musaMemset(args->recvbuff, 0, args->recvBytes));
+  MUSACHECK(musaMemset(args->sendbuff, 0, args->sendBytes));
   float rank_value = (float)args->rank;
   MUSACHECK(musaMemcpy(args->sendbuff, &rank_value, sizeof(float),
                        musaMemcpyHostToDevice));
@@ -70,10 +70,17 @@ static int allgather_checkData(threadArgs_t *args, int root, DataType type,
   return errors;
 }
 
-testEngine_t allGatherEngine = {
+static size_t allgather_getInplaceOffset(size_t sendBytes, size_t recvBytes,
+                                         int nranks, int rank) {
+  (void)recvBytes;
+  (void)nranks;
+  return sendBytes * (size_t)rank;
+}
+
+testEngine_t mcclTestEngine = {
     .name = "allgather",
     .defaultSizeBytes = (1 << 18) * sizeof(float),
-    .supportsInplace = 0,
+    .supportsInplace = 1,
     .defaultType = DATA_FLOAT,
     .defaultTypeName = "float",
     .defaultOp = OP_NONE,
@@ -82,8 +89,7 @@ testEngine_t allGatherEngine = {
     .getBuffSize = allgather_getBuffSize,
     .initData = allgather_initData,
     .runTest = allgather_runTest,
+    .getInplaceOffset = allgather_getInplaceOffset,
     .getBw = allgather_getBw,
     .checkData = allgather_checkData,
 };
-
-#pragma weak mcclTestEngine=allGatherEngine

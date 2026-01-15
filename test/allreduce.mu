@@ -14,11 +14,9 @@ static void allreduce_initData(threadArgs_t *args, int root, DataType type,
   (void)type;
   (void)op;
   // Seed first element with rank; rest zeros to match expected sum.
-  void *buf = in_place ? args->recvbuff : args->sendbuff;
-  size_t bytes = in_place ? args->recvBytes : args->sendBytes;
-  MUSACHECK(musaMemset(buf, 0, bytes));
+  MUSACHECK(musaMemset(args->sendbuff, 0, args->sendBytes));
   float rank_value = (float)args->rank;
-  MUSACHECK(musaMemcpy(buf, &rank_value, sizeof(float),
+  MUSACHECK(musaMemcpy(args->sendbuff, &rank_value, sizeof(float),
                        musaMemcpyHostToDevice));
   if (!in_place) {
     MUSACHECK(musaMemset(args->recvbuff, 0, args->recvBytes));
@@ -60,9 +58,9 @@ static int allreduce_checkData(threadArgs_t *args, int root, DataType type,
   // Expected sum of ranks in first element.
   const float expected = (float)(args->nranks * (args->nranks - 1) / 2);
   float host_result = -1.0f;
-  void *buf = in_place ? args->recvbuff : args->recvbuff;
-  MUSACHECK(
-      musaMemcpy(&host_result, buf, sizeof(float), musaMemcpyDeviceToHost));
+  (void)in_place;
+  MUSACHECK(musaMemcpy(&host_result, args->recvbuff, sizeof(float),
+                       musaMemcpyDeviceToHost));
   if (host_result != expected) {
     printf("Rank %d: incorrect result %.0f (expected %.0f)\n", args->rank,
            host_result, expected);
@@ -71,10 +69,19 @@ static int allreduce_checkData(threadArgs_t *args, int root, DataType type,
   return 0;
 }
 
-testEngine_t allReduceEngine = {
+static size_t allreduce_getInplaceOffset(size_t sendBytes, size_t recvBytes,
+                                         int nranks, int rank) {
+  (void)sendBytes;
+  (void)recvBytes;
+  (void)nranks;
+  (void)rank;
+  return 0;
+}
+
+testEngine_t mcclTestEngine = {
     .name = "allreduce",
     .defaultSizeBytes = (1 << 20) * sizeof(float),
-    .supportsInplace = 0,
+    .supportsInplace = 1,
     .defaultType = DATA_FLOAT,
     .defaultTypeName = "float",
     .defaultOp = OP_SUM,
@@ -83,8 +90,7 @@ testEngine_t allReduceEngine = {
     .getBuffSize = allreduce_getBuffSize,
     .initData = allreduce_initData,
     .runTest = allreduce_runTest,
+    .getInplaceOffset = allreduce_getInplaceOffset,
     .getBw = allreduce_getBw,
     .checkData = allreduce_checkData,
 };
-
-#pragma weak mcclTestEngine=allReduceEngine

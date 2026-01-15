@@ -61,6 +61,8 @@ typedef struct threadArgs {
   size_t recvBytes;
   size_t count;
   int in_place;
+  size_t in_place_offset;
+  int send_is_alias;
   mcclUniqueId commId;
   mcclComm_t *comms;
   mcclComm_t comm;
@@ -95,6 +97,9 @@ typedef struct testEngine {
   // Enqueue one collective operation into the stream.
   void (*runTest)(threadArgs_t *args, int root, DataType type, RedOp op,
                   const void *sendbuff, void *recvbuff, musaStream_t stream);
+  // Return byte offset into recv buffer for in-place send region.
+  size_t (*getInplaceOffset)(size_t sendBytes, size_t recvBytes, int nranks,
+                             int rank);
   // Compute algorithmic and bus bandwidth from timing.
   void (*getBw)(size_t sendBytes, size_t recvBytes, int nranks, double timeSec,
                 double *algbw, double *busbw);
