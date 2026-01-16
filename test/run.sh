@@ -15,5 +15,7 @@ if [[ ! -f "${target}" ]]; then
   exit 1
 fi
 
+read -r -p "请输入运行参数(可留空): " run_args
+
 srun --partition=mt --nodes=1 --gres=gpu:mt:8 --ntasks=1 --cpus-per-task=16 \
-  --mem=256G --time=00:20:00 "./${target}"
+  --mem=256G --time=00:20:00 "./${target}" ${run_args}

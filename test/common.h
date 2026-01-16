@@ -38,11 +38,24 @@ typedef enum {
   OP_NONE = 1,
 } RedOp;
 
+typedef struct sizeInfo {
+  // sizeBytes is the per-rank payload after any operator-specific alignment.
+  size_t sizeBytes; // effective payload bytes per rank
+  size_t sendBytes;
+  size_t recvBytes;
+  size_t count; // elements passed to collective
+} sizeInfo_t;
+
 typedef struct testArgs {
   int nranks;
+  // Size sweep configuration (bytes).
+  size_t minBytes;
+  size_t maxBytes;
   size_t sizeBytes;
   size_t sendBytes;
   size_t recvBytes;
+  size_t maxSendBytes;
+  size_t maxRecvBytes;
   size_t count;
   DataType type;
   const char *typeName;
@@ -51,7 +64,14 @@ typedef struct testArgs {
   int root;
   int warmup_iters;
   int iters;
+  // agg_iters: number of collectives aggregated per timing window.
+  int agg_iters;
   int check;
+  int blocking;
+  // 0=oop, 1=ip, 2=oop+ip
+  int inplace_mode; // 0=oop, 1=ip, 2=oop+ip
+  double stepFactor;
+  size_t stepBytes;
 } testArgs_t;
 
 typedef struct threadArgs {
@@ -69,12 +89,22 @@ typedef struct threadArgs {
   musaStream_t stream;
   musaEvent_t start;
   musaEvent_t stop;
+  void *base_sendbuff;
+  void *base_recvbuff;
   void *sendbuff;
   void *recvbuff;
   int errors;
-  double avg_ms;
+  double avg_us;
   double algbw;
   double busbw;
+  const sizeInfo_t *sizes;
+  int nSizes;
+  double *time_us;
+  double *algbw_out;
+  double *busbw_out;
+  int *errors_out;
+  int *errors_by_rank;
+  pthread_barrier_t *barrier;
   const struct testEngine *engine;
   const testArgs_t *test;
 } threadArgs_t;
@@ -113,4 +143,7 @@ extern testEngine_t mcclTestEngine;
 int get_device_count();
 int apply_env_override(int devicecount);
 size_t get_type_size(DataType type);
-void setupArgs(testArgs_t *args, const testEngine_t *engine);
+void parseArgs(int argc, char **argv, testArgs_t *args,
+               const testEngine_t *engine);
+void setupArgsForSize(testArgs_t *args, const testEngine_t *engine,
+                      size_t sizeBytes);

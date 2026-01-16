@@ -79,7 +79,7 @@ static size_t gather_getInplaceOffset(size_t sendBytes, size_t recvBytes,
 testEngine_t mcclTestEngine = {
     .name = "gather",
     .defaultSizeBytes = (1 << 18) * sizeof(float),
-    .supportsInplace = 1,
+    .supportsInplace = 0,
     .defaultType = DATA_FLOAT,
     .defaultTypeName = "float",
     .defaultOp = OP_NONE,

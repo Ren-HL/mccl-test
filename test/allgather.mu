@@ -3,8 +3,10 @@
 
 static void allgather_getBuffSize(size_t *sendBytes, size_t *recvBytes,
                                   size_t countBytes, int nranks) {
-  *sendBytes = countBytes;
-  *recvBytes = countBytes * (size_t)nranks;
+  // Align per-rank payload to 16 bytes, then scale receive by nranks.
+  size_t aligned = (countBytes + 15) & ~(size_t)15;
+  *sendBytes = aligned;
+  *recvBytes = aligned * (size_t)nranks;
 }
 
 static void allgather_initData(threadArgs_t *args, int root, DataType type,
